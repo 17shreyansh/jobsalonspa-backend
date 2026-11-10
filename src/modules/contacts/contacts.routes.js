@@ -7,7 +7,9 @@ router.post('/store', c.store);
 router.get('/matches', c.findMatches);
 
 // Admin protected
+router.get('/stats', requireAdmin, c.getStats);
 router.get('/owners', requireAdmin, c.listOwners);
+router.get('/owners/:ownerId', requireAdmin, c.getOwner);
 router.get('/owners/:ownerId/contacts', requireAdmin, c.listContacts);
 router.delete('/owners/:id', requireAdmin, c.deleteOwner);
 router.delete('/:id', requireAdmin, c.deleteContact);

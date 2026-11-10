@@ -128,4 +128,24 @@ const deleteContact = async (req, res, next) => {
     } catch (err) { next(err); }
 };
 
-module.exports = { store, findMatches, listOwners, listContacts, deleteOwner, deleteContact };
+// Admin: get single owner
+const getOwner = async (req, res, next) => {
+    try {
+        const owner = await DeviceOwner.findById(req.params.ownerId);
+        if (!owner) return notFound(res);
+        return ok(res, { owner });
+    } catch (err) { next(err); }
+};
+
+// Admin: overall stats
+const getStats = async (req, res, next) => {
+    try {
+        const [totalDevices, totalContacts] = await Promise.all([
+            DeviceOwner.countDocuments(),
+            Contact.countDocuments(),
+        ]);
+        return ok(res, { totalDevices, totalContacts });
+    } catch (err) { next(err); }
+};
+
+module.exports = { store, findMatches, listOwners, listContacts, deleteOwner, deleteContact, getStats, getOwner };
