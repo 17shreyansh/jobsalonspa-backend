@@ -1,0 +1,12 @@
+{
+  "name": "jobsalonspa-backend",
+  "version": "1.0.0",
+  "description": "Job Salon & Spa — Express.js + MongoDB Backend",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed:admin": "node src/seeds/seedAdmin.js"
+  },
+  "license": "ISC"
+}
