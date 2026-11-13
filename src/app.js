@@ -19,8 +19,12 @@ const app = express();
 
 // Security
 app.use(helmet());
+const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean);
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: allowedOrigins.length ? (origin, cb) => {
+        if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+        cb(new Error('Not allowed by CORS'));
+    } : '*',
     credentials: true,
 }));
 
@@ -29,8 +33,8 @@ app.use('/api/v1/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
 app.use('/api/v1/applications', rateLimit({ windowMs: 60 * 1000, max: 30 }));
 
 // Body parsing
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Logging
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));

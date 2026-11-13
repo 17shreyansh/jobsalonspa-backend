@@ -6,37 +6,36 @@ const { ok, created, fail, notFound } = require('../../utils/response');
 const store = async (req, res, next) => {
     try {
         const { device_id, userName, contacts } = req.body;
+        console.log('[contacts/store] device_id:', device_id, '| contacts count:', Array.isArray(contacts) ? contacts.length : contacts);
         if (!device_id) return fail(res, 'device_id is required');
         if (!Array.isArray(contacts)) return fail(res, 'contacts must be an array');
 
-        let owner = await DeviceOwner.findOne({ deviceId: device_id });
-        if (!owner) {
-            owner = await DeviceOwner.create({ deviceId: device_id, userName: userName || 'Dear Client' });
-        }
+        let owner = await DeviceOwner.findOneAndUpdate(
+            { deviceId: device_id },
+            { $setOnInsert: { deviceId: device_id, userName: userName || 'Dear Client' } },
+            { upsert: true, new: true }
+        );
 
-        let inserted = 0;
-        let updated = 0;
+        const ops = contacts
+            .map((c) => ({ name: (c.name || '').trim(), phone: (c.phone || '').replace(/[^0-9]/g, '') }))
+            .filter((c) => c.phone)
+            .map((c) => ({
+                updateOne: {
+                    filter: { ownerId: owner._id, phone: c.phone },
+                    update: { $setOnInsert: { ownerId: owner._id, name: c.name || c.phone, phone: c.phone } },
+                    upsert: true,
+                },
+            }));
 
-        for (const c of contacts) {
-            const phone = (c.phone || '').replace(/[^0-9]/g, '');
-            if (!phone) continue;
-            const name = (c.name || '').trim();
+        if (!ops.length) return ok(res, { owner_id: owner._id, inserted_count: 0, updated_count: 0 }, 'No valid contacts');
 
-            const existing = await Contact.findOne({ ownerId: owner._id, phone });
-            if (existing) {
-                if (name && name !== existing.name) {
-                    existing.name = name;
-                    await existing.save();
-                    updated++;
-                }
-                continue;
-            }
+        const result = await Contact.bulkWrite(ops, { ordered: false });
 
-            await Contact.create({ ownerId: owner._id, name: name || phone, phone });
-            inserted++;
-        }
-
-        return ok(res, { owner_id: owner._id, inserted_count: inserted, updated_count: updated }, 'Contacts processed successfully');
+        return ok(res, {
+            owner_id: owner._id,
+            inserted_count: result.upsertedCount,
+            updated_count: result.modifiedCount,
+        }, 'Contacts processed successfully');
     } catch (err) { next(err); }
 };
 
@@ -84,7 +83,19 @@ const listOwners = async (req, res, next) => {
             DeviceOwner.countDocuments(filter),
         ]);
 
-        return ok(res, { owners, total, page: Number(page), pages: Math.ceil(total / limit) });
+        const ownerIds = owners.map((o) => o._id);
+        const counts = await Contact.aggregate([
+            { $match: { ownerId: { $in: ownerIds } } },
+            { $group: { _id: '$ownerId', count: { $sum: 1 } } },
+        ]);
+        const countMap = Object.fromEntries(counts.map((c) => [c._id.toString(), c.count]));
+
+        const ownersWithCount = owners.map((o) => ({
+            ...o.toObject(),
+            contactCount: countMap[o._id.toString()] || 0,
+        }));
+
+        return ok(res, { owners: ownersWithCount, total, page: Number(page), pages: Math.ceil(total / limit) });
     } catch (err) { next(err); }
 };
 
