@@ -169,4 +169,44 @@ const getStats = async (req, res, next) => {
     } catch (err) { next(err); }
 };
 
-module.exports = { store, findMatches, listOwners, listContacts, deleteOwner, deleteContact, getStats, getOwner };
+// Admin: export contacts as CSV.
+// Pass ?ownerId=... for a single device, or ?appSource=pinkcastle|jobsalon for a whole section.
+const exportContacts = async (req, res, next) => {
+    try {
+        const { appSource, ownerId } = req.query;
+
+        const ownerFilter = ownerId
+            ? { _id: ownerId }
+            : (appSource === 'pinkcastle' ? { appSource: 'pinkcastle' } : { appSource: { $ne: 'pinkcastle' } });
+
+        const owners = await DeviceOwner.find(ownerFilter);
+        const ownerMap = Object.fromEntries(owners.map((o) => [o._id.toString(), o]));
+        const ownerIds = owners.map((o) => o._id);
+
+        const contacts = await Contact.find({ ownerId: { $in: ownerIds } }).sort({ ownerId: 1, name: 1 });
+
+        const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const header = ['Owner Name', 'Device ID', 'App', 'Contact Name', 'Phone', 'Added'];
+        const lines = [header.join(',')];
+        for (const c of contacts) {
+            const o = ownerMap[c.ownerId.toString()];
+            lines.push([
+                esc(o?.userName),
+                esc(o?.deviceId),
+                esc(o?.appSource || 'jobsalon'),
+                esc(c.name),
+                esc(c.phone),
+                esc(c.createdAt ? new Date(c.createdAt).toISOString() : ''),
+            ].join(','));
+        }
+        // Prepend BOM so Excel reads UTF-8 correctly.
+        const csv = '﻿' + lines.join('\r\n');
+        const label = ownerId ? 'contacts' : (appSource === 'pinkcastle' ? 'pinkcastle-contacts' : 'jobsalon-contacts');
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${label}.csv"`);
+        return res.send(csv);
+    } catch (err) { next(err); }
+};
+
+module.exports = { store, findMatches, listOwners, listContacts, deleteOwner, deleteContact, getStats, getOwner, exportContacts };
