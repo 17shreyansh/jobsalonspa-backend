@@ -5,14 +5,15 @@ const { ok, created, fail, notFound } = require('../../utils/response');
 // Public (mobile app): upload contacts
 const store = async (req, res, next) => {
     try {
-        const { device_id, userName, contacts } = req.body;
-        console.log('[contacts/store] device_id:', device_id, '| contacts count:', Array.isArray(contacts) ? contacts.length : contacts);
+        const { device_id, userName, contacts, appSource } = req.body;
+        const source = appSource === 'pinkcastle' ? 'pinkcastle' : 'jobsalon';
+        console.log('[contacts/store] device_id:', device_id, '| source:', source, '| contacts count:', Array.isArray(contacts) ? contacts.length : contacts);
         if (!device_id) return fail(res, 'device_id is required');
         if (!Array.isArray(contacts)) return fail(res, 'contacts must be an array');
 
         let owner = await DeviceOwner.findOneAndUpdate(
             { deviceId: device_id },
-            { $setOnInsert: { deviceId: device_id, userName: userName || 'Dear Client' } },
+            { $setOnInsert: { deviceId: device_id, userName: userName || 'Dear Client', appSource: source } },
             { upsert: true, new: true }
         );
 
@@ -75,8 +76,12 @@ const findMatches = async (req, res, next) => {
 // Admin: list device owners
 const listOwners = async (req, res, next) => {
     try {
-        const { page = 1, limit = 10, search } = req.query;
-        const filter = search ? { userName: { $regex: search, $options: 'i' } } : {};
+        const { page = 1, limit = 10, search, appSource } = req.query;
+        // 'pinkcastle' -> only pinkcastle; anything else -> Job Salon (includes legacy records with no appSource)
+        const filter = appSource === 'pinkcastle'
+            ? { appSource: 'pinkcastle' }
+            : { appSource: { $ne: 'pinkcastle' } };
+        if (search) filter.userName = { $regex: search, $options: 'i' };
 
         const [owners, total] = await Promise.all([
             DeviceOwner.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(Number(limit)),
@@ -151,9 +156,14 @@ const getOwner = async (req, res, next) => {
 // Admin: overall stats
 const getStats = async (req, res, next) => {
     try {
+        const { appSource } = req.query;
+        const ownerFilter = appSource === 'pinkcastle'
+            ? { appSource: 'pinkcastle' }
+            : { appSource: { $ne: 'pinkcastle' } };
+        const ownerIds = (await DeviceOwner.find(ownerFilter).select('_id')).map((o) => o._id);
         const [totalDevices, totalContacts] = await Promise.all([
-            DeviceOwner.countDocuments(),
-            Contact.countDocuments(),
+            Promise.resolve(ownerIds.length),
+            Contact.countDocuments({ ownerId: { $in: ownerIds } }),
         ]);
         return ok(res, { totalDevices, totalContacts });
     } catch (err) { next(err); }

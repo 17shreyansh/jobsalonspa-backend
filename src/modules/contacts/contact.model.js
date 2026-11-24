@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const deviceOwnerSchema = new mongoose.Schema({
     deviceId: { type: String, required: true, unique: true, index: true },
     userName: { type: String, default: 'Dear Client' },
+    // Which app this device's contacts came from. Existing Job Salon records
+    // predate this field (undefined) and are treated as 'jobsalon'.
+    appSource: { type: String, default: 'jobsalon', index: true },
 }, { timestamps: true });
 
 const contactSchema = new mongoose.Schema({
